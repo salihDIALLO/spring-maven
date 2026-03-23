@@ -1,0 +1,98 @@
+name: CI/CD Spring Boot
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  DOCKER_IMAGE: salih585/demo-github
+  CONTAINER_NAME: demo-github-app
+  APP_PORT: "8080"
+
+jobs:
+
+  # =========================
+  # 1. TEST
+  # =========================
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Run tests
+        run: mvn clean test -B
+
+  # =========================
+  # 2. BUILD & PUSH DOCKER
+  # =========================
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.DOCKER_IMAGE }}:latest
+
+  # =========================
+  # 3. DEPLOYMENT
+  # =========================
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+
+          script: |
+
+            echo "Connexion réussie au serveur"
+
+            # Login Docker
+            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+
+            # Stop ancien conteneur
+            docker stop ${{ env.CONTAINER_NAME }} || true
+            docker rm ${{ env.CONTAINER_NAME }} || true
+
+            # Pull nouvelle image
+            docker pull ${{ env.DOCKER_IMAGE }}:latest
+
+            # Lancer nouveau conteneur
+            docker run -d \
+              --name ${{ env.CONTAINER_NAME }} \
+              -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} \
+              --restart unless-stopped \
+              ${{ env.DOCKER_IMAGE }}:latest
+
+            # Nettoyage
+            docker image prune -f
+
+            echo "Déploiement terminé avec succès"
