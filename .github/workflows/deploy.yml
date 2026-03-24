@@ -58,41 +58,21 @@ jobs:
   # =========================
   # 3. DEPLOYMENT
   # =========================
-  deploy:
-    runs-on: ubuntu-latest
+ deploy:
+    runs-on: self-hosted
     needs: build-and-push
 
     steps:
-      - name: Deploy to server via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-
-          script: |
-
-            echo "Connexion réussie au serveur"
-
-            # Login Docker
-            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
-
-            # Stop ancien conteneur
-            docker stop ${{ env.CONTAINER_NAME }} || true
-            docker rm ${{ env.CONTAINER_NAME }} || true
-
-            # Pull nouvelle image
-            docker pull ${{ env.DOCKER_IMAGE }}:latest
-
-            # Lancer nouveau conteneur
-            docker run -d \
-              --name ${{ env.CONTAINER_NAME }} \
-              -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} \
-              --restart unless-stopped \
-              ${{ env.DOCKER_IMAGE }}:latest
-
-            # Nettoyage
-            docker image prune -f
-
-            echo "Déploiement terminé avec succès"
+      - name: Deploy container
+        run: |
+          echo "Deploiement sur self-hosted runner"
+          docker stop demo-github-app || true
+          docker rm demo-github-app || true
+          docker pull salih585/demo-github:latest
+          docker run -d \
+            --name demo-github-app \
+            -p 8080:8080 \
+            --restart unless-stopped \
+            salih585/demo-github:latest
+          docker image prune -f
+          echo "Deploiement termine avec succes"
