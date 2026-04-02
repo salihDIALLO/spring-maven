@@ -11,32 +11,46 @@ env:
 
 jobs:
 
+  # =========================
+  # 1. TEST
+  # =========================
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: temurin
           cache: maven
-      - run: mvn clean test -B
 
+      - name: Run tests
+        run: mvn clean test -B
+
+  # =========================
+  # 2. BUILD & PUSH DOCKER
+  # =========================
   build-and-push:
     runs-on: ubuntu-latest
     needs: test
     steps:
       - uses: actions/checkout@v4
+
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ env.DOCKER_IMAGE }}:latest
 
+  # =========================
+  # 3. SCAN TRIVY
+  # =========================
   security-scan:
     runs-on: ubuntu-latest
     needs: build-and-push
@@ -49,11 +63,30 @@ jobs:
           exit-code: '0'
           severity: CRITICAL,HIGH
 
+      - name: Notification echec scan
+        if: failure()
+        run: |
+          echo "ECHEC : vulnerabilites critiques detectees dans l'image"
+          echo "Image : ${{ env.DOCKER_IMAGE }}:latest"
+          echo "Commit : ${{ github.sha }}"
+          echo "Auteur : ${{ github.actor }}"
+
+  # =========================
+  # 4. DEPLOIEMENT + ROLLBACK
+  # =========================
   deploy:
     runs-on: self-hosted
     needs: security-scan
     steps:
+      - name: Sauvegarde image precedente
+        run: |
+          PREVIOUS=$(docker inspect demo-github-app \
+            --format='{{.Config.Image}}' 2>/dev/null || echo "aucune")
+          echo "Image precedente : $PREVIOUS"
+          echo "PREVIOUS_IMAGE=$PREVIOUS" >> $GITHUB_ENV
+
       - name: Deploy container
+        id: deploy
         run: |
           docker stop demo-github-app || true
           docker rm demo-github-app || true
@@ -63,5 +96,54 @@ jobs:
             -p 8080:8080 \
             --restart unless-stopped \
             salih585/demo-github:latest
-          docker image prune -f
           echo "Deploiement termine avec succes"
+
+      - name: Verification sante conteneur
+        id: healthcheck
+        run: |
+          sleep 15
+          STATUS=$(docker inspect demo-github-app \
+            --format='{{.State.Status}}' 2>/dev/null || echo "absent")
+          echo "Statut conteneur : $STATUS"
+          if [ "$STATUS" != "running" ]; then
+            echo "ECHEC : le conteneur n'est pas en cours d'execution"
+            exit 1
+          fi
+          echo "OK : conteneur en cours d'execution"
+
+      - name: Rollback en cas d'echec
+        if: failure()
+        run: |
+          echo "ROLLBACK vers : ${{ env.PREVIOUS_IMAGE }}"
+          docker stop demo-github-app || true
+          docker rm demo-github-app || true
+          if [ "${{ env.PREVIOUS_IMAGE }}" != "aucune" ]; then
+            docker run -d \
+              --name demo-github-app \
+              -p 8080:8080 \
+              --restart unless-stopped \
+              ${{ env.PREVIOUS_IMAGE }}
+            echo "Rollback effectue avec succes"
+          else
+            echo "Pas de version precedente disponible"
+          fi
+
+      - name: Notification succes
+        if: success()
+        run: |
+          echo "SUCCES deploiement"
+          echo "Image : ${{ env.DOCKER_IMAGE }}:latest"
+          echo "Commit : ${{ github.sha }}"
+          echo "Auteur : ${{ github.actor }}"
+          echo "Heure : $(date)"
+
+      - name: Notification echec deploiement
+        if: failure()
+        run: |
+          echo "ECHEC deploiement - rollback execute"
+          echo "Commit : ${{ github.sha }}"
+          echo "Auteur : ${{ github.actor }}"
+
+      - name: Nettoyage images
+        if: success()
+        run: docker image prune -f
