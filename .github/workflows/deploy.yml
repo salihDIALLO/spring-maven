@@ -11,64 +11,50 @@ env:
 
 jobs:
 
-  # =========================
-  # 1. TEST
-  # =========================
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: temurin
           cache: maven
-      - name: Run tests
-        run: mvn clean test -B
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    steps:
-      - name: Scan image avec Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: salih585/demo-github:latest
-          format: table
-          exit-code: '0'
-          severity: CRITICAL,HIGH
-  # =========================
-  # 2. BUILD & PUSH DOCKER
-  # =========================
+      - run: mvn clean test -B
+
   build-and-push:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and Push Docker image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ env.DOCKER_IMAGE }}:latest
 
-  # =========================
-  # 3. DEPLOYMENT
-  # =========================
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Scan Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_IMAGE }}:latest
+          format: table
+          exit-code: '0'
+          severity: CRITICAL,HIGH
+
   deploy:
     runs-on: self-hosted
-    needs: build-and-push
+    needs: security-scan
     steps:
       - name: Deploy container
         run: |
-          echo "Deploiement sur self-hosted runner"
           docker stop demo-github-app || true
           docker rm demo-github-app || true
           docker pull salih585/demo-github:latest
