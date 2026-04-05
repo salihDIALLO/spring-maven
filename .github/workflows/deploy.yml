@@ -65,11 +65,23 @@ jobs:
 
       - name: Notification echec scan
         if: failure()
-        run: |
-          echo "ECHEC : vulnerabilites critiques detectees dans l'image"
-          echo "Image : ${{ env.DOCKER_IMAGE }}:latest"
-          echo "Commit : ${{ github.sha }}"
-          echo "Auteur : ${{ github.actor }}"
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: "[ECHEC] Scan Trivy - ${{ github.repository }}"
+          to: diallosalia824@gmail.com
+          from: GitHub Actions <${{ secrets.GMAIL_USERNAME }}>
+          body: |
+            Vulnerabilites critiques detectees dans l'image Docker.
+
+            Image    : ${{ env.DOCKER_IMAGE }}:latest
+            Commit   : ${{ github.sha }}
+            Auteur   : ${{ github.actor }}
+            Branche  : ${{ github.ref_name }}
+            Lien     : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   # =========================
   # 4. DEPLOY STAGING
@@ -129,12 +141,45 @@ jobs:
             echo "Rollback staging effectue"
           fi
 
-      - name: Notification staging
+      - name: Notification succes staging
         if: success()
-        run: |
-          echo "SUCCES staging"
-          echo "URL : http://localhost:8081"
-          echo "Commit : ${{ github.sha }}"
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: "[SUCCES] Staging deploye - ${{ github.repository }}"
+          to: diallosalia824@gmail.com
+          from: GitHub Actions <${{ secrets.GMAIL_USERNAME }}>
+          body: |
+            Deploiement staging reussi.
+
+            URL      : http://localhost:8081
+            Image    : ${{ env.DOCKER_IMAGE }}:latest
+            Commit   : ${{ github.sha }}
+            Auteur   : ${{ github.actor }}
+            Heure    : ${{ github.event.head_commit.timestamp }}
+            Lien     : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Notification echec staging
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: "[ECHEC] Staging en echec - ${{ github.repository }}"
+          to: diallosalia824@gmail.com
+          from: GitHub Actions <${{ secrets.GMAIL_USERNAME }}>
+          body: |
+            Echec du deploiement staging - rollback execute.
+
+            Image    : ${{ env.DOCKER_IMAGE }}:latest
+            Commit   : ${{ github.sha }}
+            Auteur   : ${{ github.actor }}
+            Lien     : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   # =========================
   # 5. DEPLOY PRODUCTION
@@ -198,15 +243,40 @@ jobs:
 
       - name: Notification succes production
         if: success()
-        run: |
-          echo "SUCCES production"
-          echo "Image : ${{ env.DOCKER_IMAGE }}:latest"
-          echo "Commit : ${{ github.sha }}"
-          echo "Auteur : ${{ github.actor }}"
-          echo "Heure  : $(date)"
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: "[SUCCES] Production deployee - ${{ github.repository }}"
+          to: diallosalia824@gmail.com
+          from: GitHub Actions <${{ secrets.GMAIL_USERNAME }}>
+          body: |
+            Deploiement production reussi.
+
+            URL      : http://localhost:8080
+            Image    : ${{ env.DOCKER_IMAGE }}:latest
+            Commit   : ${{ github.sha }}
+            Auteur   : ${{ github.actor }}
+            Heure    : ${{ github.event.head_commit.timestamp }}
+            Lien     : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Notification echec production
         if: failure()
-        run: |
-          echo "ECHEC production - rollback execute"
-          echo "Commit : ${{ github.sha }}"
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: "[ECHEC] Production en echec - ${{ github.repository }}"
+          to: diallosalia824@gmail.com
+          from: GitHub Actions <${{ secrets.GMAIL_USERNAME }}>
+          body: |
+            Echec du deploiement production - rollback execute.
+
+            Image    : ${{ env.DOCKER_IMAGE }}:latest
+            Commit   : ${{ github.sha }}
+            Auteur   : ${{ github.actor }}
+            Lien     : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
