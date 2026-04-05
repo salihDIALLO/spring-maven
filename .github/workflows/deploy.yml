@@ -72,21 +72,87 @@ jobs:
           echo "Auteur : ${{ github.actor }}"
 
   # =========================
-  # 4. DEPLOIEMENT + ROLLBACK
+  # 4. DEPLOY STAGING
   # =========================
-  deploy:
+  deploy-staging:
     runs-on: self-hosted
     needs: security-scan
+    environment:
+      name: staging
+      url: http://localhost:8081
+
     steps:
-      - name: Sauvegarde image precedente
+      - name: Sauvegarde image precedente (staging)
+        run: |
+          PREVIOUS=$(docker inspect demo-github-staging \
+            --format='{{.Config.Image}}' 2>/dev/null || echo "aucune")
+          echo "PREVIOUS_IMAGE=$PREVIOUS" >> $GITHUB_ENV
+
+      - name: Deploy staging
+        run: |
+          docker stop demo-github-staging || true
+          docker rm demo-github-staging || true
+          docker pull salih585/demo-github:latest
+          docker run -d \
+            --name demo-github-staging \
+            -p 8081:8080 \
+            --restart unless-stopped \
+            -e SPRING_PROFILES_ACTIVE=staging \
+            salih585/demo-github:latest
+          echo "Staging deploye sur le port 8081"
+
+      - name: Verification sante staging
+        id: healthcheck-staging
+        run: |
+          sleep 15
+          STATUS=$(docker inspect demo-github-staging \
+            --format='{{.State.Status}}' 2>/dev/null || echo "absent")
+          echo "Statut staging : $STATUS"
+          if [ "$STATUS" != "running" ]; then
+            echo "ECHEC : staging ne repond pas"
+            exit 1
+          fi
+          echo "OK : staging operationnel sur le port 8081"
+
+      - name: Rollback staging
+        if: failure()
+        run: |
+          docker stop demo-github-staging || true
+          docker rm demo-github-staging || true
+          if [ "${{ env.PREVIOUS_IMAGE }}" != "aucune" ]; then
+            docker run -d \
+              --name demo-github-staging \
+              -p 8081:8080 \
+              --restart unless-stopped \
+              ${{ env.PREVIOUS_IMAGE }}
+            echo "Rollback staging effectue"
+          fi
+
+      - name: Notification staging
+        if: success()
+        run: |
+          echo "SUCCES staging"
+          echo "URL : http://localhost:8081"
+          echo "Commit : ${{ github.sha }}"
+
+  # =========================
+  # 5. DEPLOY PRODUCTION
+  # =========================
+  deploy-production:
+    runs-on: self-hosted
+    needs: deploy-staging
+    environment:
+      name: production
+      url: http://localhost:8080
+
+    steps:
+      - name: Sauvegarde image precedente (prod)
         run: |
           PREVIOUS=$(docker inspect demo-github-app \
             --format='{{.Config.Image}}' 2>/dev/null || echo "aucune")
-          echo "Image precedente : $PREVIOUS"
           echo "PREVIOUS_IMAGE=$PREVIOUS" >> $GITHUB_ENV
 
-      - name: Deploy container
-        id: deploy
+      - name: Deploy production
         run: |
           docker stop demo-github-app || true
           docker rm demo-github-app || true
@@ -95,26 +161,24 @@ jobs:
             --name demo-github-app \
             -p 8080:8080 \
             --restart unless-stopped \
+            -e SPRING_PROFILES_ACTIVE=prod \
             salih585/demo-github:latest
-          echo "Deploiement termine avec succes"
+          echo "Production deployee sur le port 8080"
 
-      - name: Verification sante conteneur
-        id: healthcheck
+      - name: Verification sante production
         run: |
           sleep 15
           STATUS=$(docker inspect demo-github-app \
             --format='{{.State.Status}}' 2>/dev/null || echo "absent")
-          echo "Statut conteneur : $STATUS"
           if [ "$STATUS" != "running" ]; then
-            echo "ECHEC : le conteneur n'est pas en cours d'execution"
+            echo "ECHEC production"
             exit 1
           fi
-          echo "OK : conteneur en cours d'execution"
+          echo "OK : production operationnelle"
 
-      - name: Rollback en cas d'echec
+      - name: Rollback production
         if: failure()
         run: |
-          echo "ROLLBACK vers : ${{ env.PREVIOUS_IMAGE }}"
           docker stop demo-github-app || true
           docker rm demo-github-app || true
           if [ "${{ env.PREVIOUS_IMAGE }}" != "aucune" ]; then
@@ -123,27 +187,24 @@ jobs:
               -p 8080:8080 \
               --restart unless-stopped \
               ${{ env.PREVIOUS_IMAGE }}
-            echo "Rollback effectue avec succes"
-          else
-            echo "Pas de version precedente disponible"
+            echo "Rollback production effectue"
           fi
-
-      - name: Notification succes
-        if: success()
-        run: |
-          echo "SUCCES deploiement"
-          echo "Image : ${{ env.DOCKER_IMAGE }}:latest"
-          echo "Commit : ${{ github.sha }}"
-          echo "Auteur : ${{ github.actor }}"
-          echo "Heure : $(date)"
-
-      - name: Notification echec deploiement
-        if: failure()
-        run: |
-          echo "ECHEC deploiement - rollback execute"
-          echo "Commit : ${{ github.sha }}"
-          echo "Auteur : ${{ github.actor }}"
 
       - name: Nettoyage images
         if: success()
         run: docker image prune -f
+
+      - name: Notification succes production
+        if: success()
+        run: |
+          echo "SUCCES production"
+          echo "Image : ${{ env.DOCKER_IMAGE }}:latest"
+          echo "Commit : ${{ github.sha }}"
+          echo "Auteur : ${{ github.actor }}"
+          echo "Heure  : $(date)"
+
+      - name: Notification echec production
+        if: failure()
+        run: |
+          echo "ECHEC production - rollback execute"
+          echo "Commit : ${{ github.sha }}"
