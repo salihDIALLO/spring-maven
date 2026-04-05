@@ -85,8 +85,9 @@ jobs:
       - name: Sauvegarde image precedente (staging)
         run: |
           PREVIOUS=$(docker inspect demo-github-staging \
-            --format='{{.Config.Image}}' 2>/dev/null || echo "none")
-          echo "PREVIOUS_IMAGE=${PREVIOUS}" >> $GITHUB_ENV
+            --format='{{.Config.Image}}' 2>/dev/null || true)
+          if [ -z "$PREVIOUS" ]; then PREVIOUS="none"; fi
+          printf 'PREVIOUS_IMAGE=%s\n' "$PREVIOUS" >> $GITHUB_ENV
 
       - name: Deploy staging
         run: |
@@ -149,8 +150,9 @@ jobs:
       - name: Sauvegarde image precedente (prod)
         run: |
           PREVIOUS=$(docker inspect demo-github-app \
-            --format='{{.Config.Image}}' 2>/dev/null || echo "none")
-          echo "PREVIOUS_IMAGE=${PREVIOUS}" >> $GITHUB_ENV
+            --format='{{.Config.Image}}' 2>/dev/null || true)
+          if [ -z "$PREVIOUS" ]; then PREVIOUS="none"; fi
+          printf 'PREVIOUS_IMAGE=%s\n' "$PREVIOUS" >> $GITHUB_ENV
 
       - name: Deploy production
         run: |
